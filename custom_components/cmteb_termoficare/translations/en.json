@@ -4,14 +4,16 @@
       "user": {
         "title": "Add CMTEB address",
         "data": {
-          "adresa": "Address",
-          "punct_termic": "Thermal point"
+          "street": "Street",
+          "block": "Block",
+          "punct_termic": "Thermal point (optional)"
         }
       }
     },
     "error": {
       "cannot_connect": "Cannot connect to CMTEB website",
-      "invalid_address": "Please enter a valid address"
+      "street_required": "Please enter a street",
+      "block_required": "Please enter a block"
     },
     "abort": {
       "already_configured": "Address already configured"

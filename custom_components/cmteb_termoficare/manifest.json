@@ -1,13 +1,13 @@
 {
   "domain": "cmteb_termoficare",
   "name": "CMTEB Termoficare",
-  "codeowners": ["@GeorgeRPI"],
+  "codeowners": ["@Mevas"],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/GeorgeRPI/cmteb_termoficare",
-  "issue_tracker": "https://github.com/GeorgeRPI/cmteb_termoficare/issues",
+  "documentation": "https://github.com/Mevas/cmteb_termoficare",
+  "issue_tracker": "https://github.com/Mevas/cmteb_termoficare/issues",
   "integration_type": "service",
   "iot_class": "cloud_polling",
   "requirements": ["beautifulsoup4>=4.12.0"],
-  "version": "1.5.8-Stable"
+  "version": "2.0.0"
 }

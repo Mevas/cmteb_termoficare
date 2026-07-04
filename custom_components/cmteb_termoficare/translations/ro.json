@@ -4,14 +4,16 @@
       "user": {
         "title": "Adaugă adresă CMTEB",
         "data": {
-          "adresa": "Adresă",
-          "punct_termic": "Punct termic"
+          "street": "Stradă",
+          "block": "Bloc",
+          "punct_termic": "Punct termic (opțional)"
         }
       }
     },
     "error": {
       "cannot_connect": "Nu mă pot conecta la site-ul CMTEB",
-      "invalid_address": "Te rugăm să introduci adresa"
+      "street_required": "Te rugăm să introduci strada",
+      "block_required": "Te rugăm să introduci blocul"
     },
     "abort": {
       "already_configured": "Adresa este deja configurată"
