@@ -6,7 +6,8 @@
         "data": {
           "street": "Stradă",
           "block": "Bloc",
-          "punct_termic": "Punct termic (opțional)"
+          "punct_termic": "Punct termic (opțional)",
+          "scan_interval_minutes": "Interval de interogare în minute"
         }
       }
     },

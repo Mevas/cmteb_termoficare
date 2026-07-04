@@ -10,7 +10,14 @@ from homeassistant import config_entries
 from homeassistant.core import callback
 import homeassistant.helpers.config_validation as cv
 
-from .const import DOMAIN
+from .const import (
+    CONF_BLOCK,
+    CONF_PUNCT_TERMIC,
+    CONF_SCAN_INTERVAL_MINUTES,
+    CONF_STREET,
+    DEFAULT_SCAN_INTERVAL_MINUTES,
+    DOMAIN,
+)
 
 
 def _slug(text: str) -> str:
@@ -30,14 +37,18 @@ def _unique_id(street: str, block: str, punct_termic: str = "") -> str:
     return "_".join(part for part in parts if part)
 
 
-def _schema(defaults: dict[str, str] | None = None) -> vol.Schema:
+def _schema(defaults: dict[str, object] | None = None) -> vol.Schema:
     """Return the user/options schema."""
     defaults = defaults or {}
     return vol.Schema(
         {
-            vol.Required("street", default=defaults.get("street", "")): cv.string,
-            vol.Required("block", default=defaults.get("block", "")): cv.string,
-            vol.Optional("punct_termic", default=defaults.get("punct_termic", "")): cv.string,
+            vol.Required(CONF_STREET, default=defaults.get(CONF_STREET, "")): cv.string,
+            vol.Required(CONF_BLOCK, default=defaults.get(CONF_BLOCK, "")): cv.string,
+            vol.Optional(CONF_PUNCT_TERMIC, default=defaults.get(CONF_PUNCT_TERMIC, "")): cv.string,
+            vol.Required(
+                CONF_SCAN_INTERVAL_MINUTES,
+                default=defaults.get(CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL_MINUTES),
+            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=1440)),
         }
     )
 
@@ -52,24 +63,25 @@ class CMTEBConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            street = user_input.get("street", "").strip()
-            block = user_input.get("block", "").strip()
+            street = user_input.get(CONF_STREET, "").strip()
+            block = user_input.get(CONF_BLOCK, "").strip()
             if not street:
-                errors["street"] = "street_required"
+                errors[CONF_STREET] = "street_required"
             if not block:
-                errors["block"] = "block_required"
+                errors[CONF_BLOCK] = "block_required"
 
             if not errors:
-                punct_termic = user_input.get("punct_termic", "").strip()
+                punct_termic = user_input.get(CONF_PUNCT_TERMIC, "").strip()
                 unique_id = _unique_id(street, block, punct_termic)
                 await self.async_set_unique_id(unique_id)
                 self._abort_if_unique_id_configured()
                 return self.async_create_entry(
                     title=f"CMTEB {street} {block}",
                     data={
-                        "street": street,
-                        "block": block,
-                        "punct_termic": punct_termic,
+                        CONF_STREET: street,
+                        CONF_BLOCK: block,
+                        CONF_PUNCT_TERMIC: punct_termic,
+                        CONF_SCAN_INTERVAL_MINUTES: user_input[CONF_SCAN_INTERVAL_MINUTES],
                     },
                 )
 
@@ -79,32 +91,33 @@ class CMTEBConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(config_entry):
         """Return options flow handler."""
-        return CMTEBOptionsFlow(config_entry)
+        return CMTEBOptionsFlow()
 
 
-class CMTEBOptionsFlow(config_entries.OptionsFlow):
+class CMTEBOptionsFlow(config_entries.OptionsFlowWithReload):
     """Handle options flow for CMTEB Termoficare."""
-
-    def __init__(self, config_entry):
-        self.config_entry = config_entry
 
     async def async_step_init(self, user_input=None):
         """Manage options."""
         errors: dict[str, str] = {}
         defaults = {
-            "street": self.config_entry.options.get("street", self.config_entry.data.get("street", "")),
-            "block": self.config_entry.options.get("block", self.config_entry.data.get("block", "")),
-            "punct_termic": self.config_entry.options.get(
-                "punct_termic", self.config_entry.data.get("punct_termic", "")
+            CONF_STREET: self.config_entry.options.get(CONF_STREET, self.config_entry.data.get(CONF_STREET, "")),
+            CONF_BLOCK: self.config_entry.options.get(CONF_BLOCK, self.config_entry.data.get(CONF_BLOCK, "")),
+            CONF_PUNCT_TERMIC: self.config_entry.options.get(
+                CONF_PUNCT_TERMIC, self.config_entry.data.get(CONF_PUNCT_TERMIC, "")
+            ),
+            CONF_SCAN_INTERVAL_MINUTES: self.config_entry.options.get(
+                CONF_SCAN_INTERVAL_MINUTES,
+                self.config_entry.data.get(CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL_MINUTES),
             ),
         }
         if user_input is not None:
-            street = user_input.get("street", "").strip()
-            block = user_input.get("block", "").strip()
+            street = user_input.get(CONF_STREET, "").strip()
+            block = user_input.get(CONF_BLOCK, "").strip()
             if not street:
-                errors["street"] = "street_required"
+                errors[CONF_STREET] = "street_required"
             if not block:
-                errors["block"] = "block_required"
+                errors[CONF_BLOCK] = "block_required"
 
             if errors:
                 return self.async_show_form(step_id="init", data_schema=_schema(defaults), errors=errors)
@@ -112,9 +125,10 @@ class CMTEBOptionsFlow(config_entries.OptionsFlow):
             return self.async_create_entry(
                 title="",
                 data={
-                    "street": street,
-                    "block": block,
-                    "punct_termic": user_input.get("punct_termic", "").strip(),
+                    CONF_STREET: street,
+                    CONF_BLOCK: block,
+                    CONF_PUNCT_TERMIC: user_input.get(CONF_PUNCT_TERMIC, "").strip(),
+                    CONF_SCAN_INTERVAL_MINUTES: user_input[CONF_SCAN_INTERVAL_MINUTES],
                 },
             )
 

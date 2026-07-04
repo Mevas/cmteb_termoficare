@@ -6,7 +6,8 @@
         "data": {
           "street": "Street",
           "block": "Block",
-          "punct_termic": "Thermal point (optional)"
+          "punct_termic": "Thermal point (optional)",
+          "scan_interval_minutes": "Polling interval in minutes"
         }
       }
     },

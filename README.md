@@ -34,6 +34,7 @@ The config flow asks for:
 - `Street`: street name as it appears, or approximately appears, on CMTEB
 - `Block`: exact block token, e.g. `15D`, `205`
 - `Thermal point`: optional hint / disambiguator
+- `Polling interval in minutes`: how often Home Assistant fetches the CMTEB page
 
 The parser is diacritics-insensitive, so `Moinesti` can match `Moineşti`.
 
@@ -71,6 +72,7 @@ Detailed data is exposed as attributes:
 - `parser`
 - `last_checked`
 - `source_url`
+- `scan_interval_minutes`
 
 ## Helper-Derived Stats
 
