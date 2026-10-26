@@ -72,18 +72,18 @@ class CmtebDataUpdateCoordinator(DataUpdateCoordinator[CmtebStatus]):
         )
 
     async def _async_update_data(self) -> CmtebStatus:
-        """Fetch and parse the CMTEB status page."""
+        """Fetch and parse the CMTEB outage feed."""
         session = async_get_clientsession(self.hass)
         headers = {
             "User-Agent": "HomeAssistant CMTEB Termoficare/2.0",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept": "application/json",
             "Accept-Language": "ro-RO,ro;q=0.9,en;q=0.8",
         }
         try:
             async with session.get(URL_CMTEB, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as response:
                 response.raise_for_status()
-                html = await response.text()
-            status = parse_cmteb_status(html, self._street, self._block, self._punct_termic)
+                data = await response.json(content_type=None)
+            status = parse_cmteb_status(data, self._street, self._block, self._punct_termic)
             _LOGGER.debug(
                 "CMTEB parsed status for %s %s: state=%s match=%s punct=%s status_type=%s eta=%s",
                 self._street,

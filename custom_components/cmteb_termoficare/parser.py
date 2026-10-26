@@ -1,32 +1,14 @@
-"""Parsing helpers for CMTEB Termoficare status pages."""
+"""Parsing helpers for the CMTEB Termoficare outage feed."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 import re
+from typing import Any
 import unicodedata
 
-from bs4 import BeautifulSoup
-
-
-ADDRESS_PREFIX_RE = re.compile(
-    r"\b(Str|Bld|Bd|Calea|Aleea|Intrarea|Sos|Șos|Şos|Piata|Piața|Piaţa)\b",
-    re.IGNORECASE,
-)
-ETA_RE = re.compile(r"\b\d{2}\.\d{2}\.\d{4}\s+\d{1,2}:\d{2}\b")
-STATUS_VALUES = {
-    "acc",
-    "inc",
-    "inc acc",
-    "acc inc",
-    "deficienta acc",
-    "deficienta inc",
-    "oprire acc",
-    "oprire inc",
-    "oprire acc inc",
-    "deficienta acc inc",
-}
+# Detail qualifiers that carry numbers which are not block tokens, e.g. "57 sc.2".
+QUALIFIER_RE = re.compile(r"\b(sc|scara|et|ap)\s+[a-z0-9]+\b")
 
 
 @dataclass(slots=True)
@@ -41,12 +23,14 @@ class CmtebStatus:
     service: str | None = None
     status_type: str | None = None
     cause: str | None = None
+    started: str | None = None
     eta: str | None = None
     eta_raw: str | None = None
     matched_zone: str | None = None
     address_lines: list[str] | None = None
     record_text: str | None = None
-    parser: str = "table"
+    source_generated: str | None = None
+    parser: str = "json"
 
     def as_attributes(self) -> dict[str, object]:
         """Return Home Assistant attributes without the state value."""
@@ -58,11 +42,13 @@ class CmtebStatus:
             "service": self.service,
             "status_type": self.status_type,
             "cause": self.cause,
+            "started": self.started,
             "eta": self.eta,
             "eta_raw": self.eta_raw,
             "matched_zone": self.matched_zone,
             "address_lines": self.address_lines or [],
             "record_text": self.record_text,
+            "source_generated": self.source_generated,
             "parser": self.parser,
         }
 
@@ -80,168 +66,35 @@ def normalize(value: object) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def parse_eta(value: str | None) -> str | None:
-    """Convert CMTEB date text to a Home Assistant parseable datetime string."""
-    if not value:
+def service_from_agent(agent: str | None) -> str | None:
+    """Convert the feed agent code (ACC, INC, ACC+INC) to the service label."""
+    if not agent:
         return None
-    try:
-        return datetime.strptime(value, "%d.%m.%Y %H:%M").isoformat(timespec="seconds")
-    except ValueError:
-        return value
+    return "+".join("ÎNC" if part.strip().upper() == "INC" else part.strip() for part in agent.split("+"))
 
 
-def is_status_line(line: str) -> bool:
-    """Return True when a cell line is a status/service label."""
-    return normalize(line) in STATUS_VALUES
+def street_matches(strada: str, street: str) -> bool:
+    """Match the configured street inside a feed street such as 'Str Barbu Văcărescu'."""
+    return f" {normalize(street)} " in f" {normalize(strada)} "
 
 
-def service_from_status(line: str) -> str:
-    """Extract affected service code from a status label."""
-    normalized = normalize(line)
-    services: list[str] = []
-    if "acc" in normalized:
-        services.append("ACC")
-    if "inc" in normalized:
-        services.append("ÎNC")
-    return "+".join(services) if services else line.strip()
+def details_match_block(detalii: str, block: str) -> bool:
+    """Match a block token inside feed details such as 'bl.1,2; 7'.
 
-
-def cell_lines(cell) -> list[str]:
-    """Return clean line-oriented text from one BeautifulSoup table cell."""
-    for br in cell.find_all("br"):
-        br.replace_with("\n")
-    text = cell.get_text("\n", strip=True)
-    return [re.sub(r"\s+", " ", line).strip() for line in text.splitlines() if line.strip()]
-
-
-def line_matches_address(line: str, street: str, block: str) -> bool:
-    """Match a street/block inside a CMTEB grouped affected-zone line."""
-    normalized = normalize(line)
-    if normalize(street) not in normalized:
-        return False
-    if " bl " not in f" {normalized} ":
-        return False
+    Empty details mean the whole street is listed.
+    """
+    details = QUALIFIER_RE.sub(" ", normalize(detalii))
+    if not details:
+        return True
     block_token = re.escape(normalize(block))
-    return re.search(rf"(^|[^a-z0-9]){block_token}($|[^a-z0-9])", normalized) is not None
+    return re.search(rf"(^|[^a-z0-9]){block_token}($|[^a-z0-9])", details) is not None
 
 
-def section_for_address(lines: list[str], index: int) -> list[str]:
-    """Return the Punct Termic section containing an address line."""
-    start = index
-    for pos in range(index, -1, -1):
-        if "punct termic" in normalize(lines[pos]):
-            start = pos
-            break
-
-    end = len(lines)
-    for pos in range(index + 1, len(lines)):
-        if "punct termic" in normalize(lines[pos]):
-            end = pos
-            break
-
-    return lines[start:end]
-
-
-def parse_punct_section(section: list[str]) -> tuple[str | None, str | None, list[str]]:
-    """Parse one Punct Termic section from the affected-zone cell."""
-    punct_termic = None
-    affected_count = None
-
-    for pos, line in enumerate(section):
-        match = re.search(r"Punct\s+termic\s*:\s*(.*)", line, re.IGNORECASE)
-        if not match:
-            continue
-
-        remainder = match.group(1).strip()
-        if remainder:
-            if "--" in remainder:
-                punct_termic, affected_count = [part.strip() for part in remainder.split("--", 1)]
-            else:
-                punct_termic = remainder
-        else:
-            for candidate in section[pos + 1 :]:
-                normalized = normalize(candidate)
-                if not normalized or normalized.startswith("--") or "blocuri imobile" in normalized:
-                    continue
-                punct_termic = candidate.strip(" -–")
-                break
-        break
-
-    if affected_count is None:
-        for line in section:
-            match = re.search(r"(?:--|[-–])?\s*(\d+\s+blocuri/imobile)", line, re.IGNORECASE)
-            if match:
-                affected_count = match.group(1).strip()
-                break
-
-    address_lines = [line for line in section if ADDRESS_PREFIX_RE.search(line)]
-    return punct_termic, affected_count, address_lines
-
-
-def row_sector(cells: list[list[str]]) -> str | None:
-    """Extract sector from the row cells."""
-    for lines in cells:
-        text = " ".join(lines)
-        normalized = normalize(text)
-        if re.fullmatch(r"[1-6]", normalized):
-            return normalized
-        match = re.search(r"\bsector\s+([1-6])\b", normalized)
-        if match:
-            return match.group(1)
-    return None
-
-
-def row_status(cells: list[list[str]], street: str, block: str) -> tuple[str | None, str | None, str | None, str | None]:
-    """Extract status, service, cause and raw ETA from one table row."""
-    status_type = None
-    service = None
-    cause = None
-    eta_raw = None
-
-    for lines in cells:
-        for line in lines:
-            if is_status_line(line):
-                status_type = line.strip()
-                service = service_from_status(line)
-                break
-        if status_type:
-            break
-
-    for lines in cells:
-        for line in lines:
-            match = ETA_RE.search(line)
-            if match:
-                eta_raw = match.group(0)
-                break
-        if eta_raw:
-            break
-
-    for lines in cells:
-        if not lines:
-            continue
-        normalized_cell = normalize(" ".join(lines))
-        if "punct termic" in normalized_cell:
-            continue
-        if any(line_matches_address(line, street, block) for line in lines):
-            continue
-        if any(is_status_line(line) for line in lines):
-            continue
-        if eta_raw and any(eta_raw in line for line in lines):
-            continue
-        if row_sector([lines]) is not None:
-            continue
-        if normalized_cell in {
-            "zone afectate",
-            "agentul termic afectat",
-            "cauza descrierea interventiei",
-            "data ora estimarii punerii in functiune",
-            "sector",
-        }:
-            continue
-        cause = " | ".join(lines)
-        break
-
-    return status_type, service, cause, eta_raw
+def address_line(address: dict[str, Any]) -> str:
+    """Format one feed address like the old CMTEB listing."""
+    strada = str(address.get("strada") or "").strip()
+    detalii = str(address.get("detalii") or "").strip()
+    return f"{strada} - {detalii}" if detalii else strada
 
 
 def _punct_matches(configured_punct_termic: str | None, parsed_punct_termic: str | None) -> bool:
@@ -253,36 +106,43 @@ def _punct_matches(configured_punct_termic: str | None, parsed_punct_termic: str
     return normalize(configured_punct_termic) in normalize(parsed_punct_termic)
 
 
-def parse_cmteb_status(html: str, street: str, block: str, punct_termic: str | None = None) -> CmtebStatus:
-    """Parse CMTEB HTML for one address."""
-    soup = BeautifulSoup(html, "html.parser")
-    for row in soup.find_all("tr"):
-        raw_cells = row.find_all(["td", "th"])
-        if not raw_cells:
-            continue
-        cells = [cell_lines(cell) for cell in raw_cells]
-        for lines in cells:
-            for line_index, line in enumerate(lines):
-                if not line_matches_address(line, street, block):
+def parse_cmteb_status(data: dict[str, Any], street: str, block: str, punct_termic: str | None = None) -> CmtebStatus:
+    """Parse the CMTEB opriri-detaliate.json feed for one address."""
+    outages = data.get("avarii") if isinstance(data, dict) else None
+    if not isinstance(outages, list):
+        raise ValueError("CMTEB feed has no 'avarii' list; the feed format may have changed")
+    generated = data.get("generat")
+
+    for outage in outages:
+        for point in outage.get("puncteTermice") or []:
+            name = point.get("denumire")
+            if not _punct_matches(punct_termic, name):
+                continue
+            addresses = point.get("adrese") or []
+            for address in addresses:
+                if not street_matches(address.get("strada") or "", street):
                     continue
-                section = section_for_address(lines, line_index)
-                parsed_punct_termic, affected_count, address_lines = parse_punct_section(section)
-                if not _punct_matches(punct_termic, parsed_punct_termic):
+                if not details_match_block(address.get("detalii") or "", block):
                     continue
-                status_type, service, cause, eta_raw = row_status(cells, street, block)
+                address_lines = [address_line(item) for item in addresses]
+                imobile = point.get("imobile")
+                estimare = outage.get("estimare")
+                sector = outage.get("sector")
                 return CmtebStatus(
                     state="affected",
                     match_found=True,
-                    sector=row_sector(cells),
-                    punct_termic=parsed_punct_termic,
-                    affected_count=affected_count,
-                    service=service,
-                    status_type=status_type,
-                    cause=cause,
-                    eta=parse_eta(eta_raw),
-                    eta_raw=eta_raw,
-                    matched_zone=line,
+                    sector=str(sector) if sector is not None else None,
+                    punct_termic=name,
+                    affected_count=f"{imobile} blocuri/imobile" if imobile is not None else None,
+                    service=service_from_agent(outage.get("agent")),
+                    status_type=outage.get("eticheta"),
+                    cause=outage.get("cauza"),
+                    started=outage.get("inceput"),
+                    eta=estimare,
+                    eta_raw=estimare,
+                    matched_zone=address_line(address),
                     address_lines=address_lines,
-                    record_text=" | ".join(section)[:1000],
+                    record_text=" | ".join([f"Punct termic: {name}", *address_lines])[:1000],
+                    source_generated=generated,
                 )
-    return CmtebStatus(state="normal", match_found=False, parser="table")
+    return CmtebStatus(state="normal", match_found=False, source_generated=generated)
