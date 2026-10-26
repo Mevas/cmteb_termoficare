@@ -6,9 +6,10 @@ This fork focuses on a cleaner Home Assistant UX:
 
 - one short-state source sensor: `normal`, `affected`, `error`, `unknown`
 - long CMTEB text stored as attributes, not sensor state
-- Home Assistant-parseable ETA attribute (`YYYY-MM-DDTHH:MM:SS`)
+- Home Assistant-parseable ETA attribute (`YYYY-MM-DDTHH:MM:SS+02:00`)
 - street + block matching inside grouped CMTEB rows like `Str Avionului - bl. 16J, 15H, 15D`
-- parser tests with checked-in HTML fixtures
+- reads CMTEB's JSON outage feed (`https://www.cmteb.ro/data/opriri-detaliate.json`)
+- parser tests with a checked-in feed fixture
 - aggregate/statistical sensors are intended to be built afterwards with HA helpers
 
 ## Install
@@ -34,7 +35,7 @@ The config flow asks for:
 - `Street`: street name as it appears, or approximately appears, on CMTEB
 - `Block`: exact block token, e.g. `15D`, `205`
 - `Thermal point`: optional hint / disambiguator
-- `Polling interval in minutes`: how often Home Assistant fetches the CMTEB page
+- `Polling interval in minutes`: how often Home Assistant fetches the CMTEB feed
 
 The parser is diacritics-insensitive, so `Moinesti` can match `Moineşti`.
 
@@ -64,11 +65,13 @@ Detailed data is exposed as attributes:
 - `service` (`ACC`, `ÎNC`, or both)
 - `status_type` (`Deficienta ACC`, `Oprire ACC`, etc.)
 - `cause`
+- `started` (ISO datetime string)
 - `eta` (ISO datetime string)
-- `eta_raw` (original CMTEB text)
+- `eta_raw` (original CMTEB value)
 - `matched_zone`
 - `address_lines`
 - `record_text`
+- `source_generated` (when CMTEB generated the feed)
 - `parser`
 - `last_checked`
 - `source_url`
@@ -88,7 +91,7 @@ This keeps Recorder/statistics behavior in Home Assistant instead of hiding hist
 
 ## Parser Tests
 
-Tests use checked-in HTML artifacts under `tests/fixtures/`.
+Tests use a checked-in copy of the CMTEB feed under `tests/fixtures/`.
 
 Run locally:
 
